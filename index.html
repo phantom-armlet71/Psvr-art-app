@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR 3D Drawing</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/webxr/XRControllerModelFactory.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/webxr/XRHandModelFactory.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/controls/OrbitControls.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; text-align: center; }
+        .toolbar { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; }
+        .toolbar button, input { padding: 10px; font-size: 16px; }
+        .color-palette { display: flex; gap: 5px; }
+        .color-box { width: 30px; height: 30px; border: 1px solid #000; cursor: pointer; }
+        .vr-button { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 15px; font-size: 18px; background: red; color: white; border: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <div class="color-palette">
+            <div class="color-box" style="background: black;" onclick="setColor('#000000')"></div>
+            <div class="color-box" style="background: red;" onclick="setColor('#ff0000')"></div>
+            <div class="color-box" style="background: green;" onclick="setColor('#00ff00')"></div>
+            <div class="color-box" style="background: blue;" onclick="setColor('#0000ff')"></div>
+            <div class="color-box" style="background: yellow;" onclick="setColor('#ffff00')"></div>
+            <input type="color" id="colorPicker">
+        </div>
+        <input type="range" id="brushSize" min="0.01" max="0.1" step="0.01" value="0.05">
+        <button onclick="clearScene()">Clear</button>
+    </div>
+    <button class="vr-button" onclick="startVR()">Enter VR</button>
+
+    <script>
+        let scene, camera, renderer, controller, brushSize = 0.05, color = '#000000';
+        let drawing = false, lastPosition = null;
+        
+        init();
+        animate();
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // Lights
+            const light = new THREE.AmbientLight(0xffffff, 2);
+            scene.add(light);
+
+            // Floor Grid
+            const gridHelper = new THREE.GridHelper(10, 10);
+            scene.add(gridHelper);
+
+            // VR Controllers
+            const controllerModelFactory = new THREE.XRControllerModelFactory();
+            controller = renderer.xr.getController(0);
+            controller.addEventListener("selectstart", () => { drawing = true; lastPosition = null; });
+            controller.addEventListener("selectend", () => { drawing = false; lastPosition = null; });
+            scene.add(controller);
+
+            const controllerGrip = renderer.xr.getControllerGrip(0);
+            controllerGrip.add(controllerModelFactory.createControllerModel(controllerGrip));
+            scene.add(controllerGrip);
+
+            // Color & Brush Size
+            document.getElementById('colorPicker').oninput = (e) => setColor(e.target.value);
+            document.getElementById('brushSize').oninput = (e) => brushSize = parseFloat(e.target.value);
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function animate() {
+            renderer.setAnimationLoop(() => {
+                if (drawing) drawIn3D();
+                renderer.render(scene, camera);
+            });
+        }
+
+        function setColor(newColor) {
+            color = newColor;
+            document.getElementById('colorPicker').value = newColor;
+        }
+
+        function drawIn3D() {
+            if (!controller) return;
+            const position = controller.position.clone();
+
+            if (lastPosition) {
+                const material = new THREE.MeshBasicMaterial({ color });
+                const geometry = new THREE.CylinderGeometry(brushSize, brushSize, lastPosition.distanceTo(position), 8);
+                const cylinder = new THREE.Mesh(geometry, material);
+                cylinder.position.copy(lastPosition.clone().lerp(position, 0.5));
+                cylinder.lookAt(position);
+                scene.add(cylinder);
+            }
+            lastPosition = position.clone();
+        }
+
+        function clearScene() {
+            scene.children = scene.children.filter(child => !(child instanceof THREE.Mesh));
+        }
+
+        function startVR() {
+            if (navigator.xr) {
+                navigator.xr.requestSession("immersive-vr").then(session => {
+                    document.body.requestFullscreen();
+                    renderer.xr.setSession(session);
+                    console.log("VR Mode Started!");
+                }).catch(err => console.log("VR Error:", err));
+            } else {
+                alert("WebXR not supported on this device.");
+            }
+        }
+    </script>
+</body>
+</html>
